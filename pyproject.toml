@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mongo-survey"
+dynamic = ["version"]
+description = "Read-only MongoDB health-data collector: per-member index usage, collection/cache stats, and cache heat sampling, written to one open JSONL capture file."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+dependencies = [
+    "pymongo>=4.6,<5",
+    "dnspython>=2.4",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Database",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+mongo-survey = "mongo_survey.cli:main"
+
+[tool.hatch.version]
+path = "src/mongo_survey/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mongo_survey"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
