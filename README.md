@@ -13,23 +13,8 @@ is listed below.
 
 ## Quickstart
 
-**1. Create a read-only database user.** On Atlas, with the [Atlas CLI](https://www.mongodb.com/docs/atlas/cli/current/)
-(or in the UI under *Database Access*, with these three built-in roles):
-
-```bash
-atlas dbusers create --username mongo-survey --role clusterMonitor@admin,readAnyDatabase@admin,read@local
-```
-
-It prompts for the password.
-
-On a self-managed deployment, in `mongosh`:
-
-```js
-db.getSiblingDB("admin").createUser({
-  user: "mongo-survey", pwd: passwordPrompt(),
-  roles: ["clusterMonitor", "readAnyDatabase", { role: "read", db: "local" }]
-})
-```
+**1. Use a suitable database user.** On Atlas, `atlasAdmin` works. Otherwise use a user with the
+built-in roles `clusterMonitor` and `readAnyDatabase` (both on `admin`). No write role is needed.
 
 **2. Install** (Python 3.9+):
 
@@ -40,36 +25,11 @@ pipx install git+https://github.com/mhelmstetter/mongo-survey
 **3. Save the connection string in a file** so the password stays out of shell history:
 
 ```bash
-umask 077; echo 'mongodb+srv://mongo-survey:<password>@<cluster-host>/' > ~/cluster.uri
+umask 077; echo 'mongodb+srv://<user>:<password>@<cluster-host>/' > ~/cluster.uri
 ```
 
-**4. Run the preflight.** It connects, checks the version, your privileges and the namespace
-count, and shows how each member will be reached. It collects nothing and writes no file.
-
-```bash
-mongo-survey check --uri-file ~/cluster.uri
-```
-
-```
-12:00:01 INFO    sharded, MongoDB 8.0.12: checking privileges
-12:00:02 INFO    discovering members
-12:00:09 INFO    namespace inventory
-12:00:10 INFO    topology: sharded, MongoDB 8.0.12, 18 data-bearing member(s), 4 database(s), 950 namespace(s)
-12:00:10 INFO    atlas: yes — hostname suffix (…); Atlas member tags ['nodeType', 'provider', 'region', 'workloadType'] on 18 member(s)
-12:00:10 INFO    collection-level access: mongos (direct shard collection access refused; using mongos tag targeting)
-12:00:10 INFO      tags[availabilityZone=us-east-1a | {}] -> shard-0:…, shard-1:…, shard-2:…, shard-3:…, shard-4:…
-12:00:10 INFO      tags[availabilityZone=us-east-1b | {}] -> …
-12:00:10 INFO      tags[availabilityZone=us-east-1c | {}] -> …
-12:00:10 INFO      planned coverage: 15 member(s)
-12:00:10 INFO    check passed
-```
-
-(18 members counts the config servers; the 15 planned are the shard members, which hold the
-collections.)
-
-If a privilege is missing, it lists exactly which ones and the roles that grant them.
-
-**5. Collect.** This takes a few minutes on a large cluster, including a 60-second sampling window:
+**4. Collect.** It first checks the version, privileges and namespace count, and stops with a clear message if
+anything is missing. A full run takes a few minutes on a large cluster, including a 60-second sampling window:
 
 ```bash
 mongo-survey collect --uri-file ~/cluster.uri
@@ -79,7 +39,7 @@ It ends with a coverage summary and the file it wrote, for example
 `mongo-survey-mycluster-20260101T120000Z.jsonl.gz`. An exit status of `0` means every member
 answered. `2` means the run finished, but something was missing, and the footer of the file says what.
 
-**6. Share or summarize.** Send the `.jsonl.gz` file to whoever is doing the analysis, or preview
+**5. Share or summarize.** Send the `.jsonl.gz` file to whoever is doing the analysis, or preview
 the summary yourself:
 
 ```bash
@@ -190,13 +150,19 @@ finished but incomplete (command errors or members that could not be covered: se
 ## Required privileges
 
 The run checks privileges up front (`connectionStatus` with `showPrivileges`) and stops with a list
-of anything missing. Recommended roles for a dedicated user:
+of anything missing. Either of these is enough:
 
-- `clusterMonitor@admin`: server, replication and sharding stats, `$indexStats`, `$queryStats`, `top`, `config` metadata
-- `readAnyDatabase@admin`, or `read` on each application database: `listCollections`
-- `read@local`: the oplog window
+- On Atlas, `atlasAdmin`.
+- `clusterMonitor@admin` + `readAnyDatabase@admin`.
+  - `clusterMonitor` covers server, replication and sharding stats, `$indexStats`, `$queryStats`,
+    `top`, `config` metadata, and the oplog window, since it can read `local`.
+  - `readAnyDatabase` covers `listCollections`. `read` on each application database also works.
 
-On Atlas, create a database user with those roles. No write role is needed.
+No write role is needed. `--include-auth` additionally needs `viewUser`/`viewRole` (for example
+`userAdminAnyDatabase`, or `atlasAdmin`).
+
+To run `mongo-survey check` on its own: it does the same preflight, shows how each member will be
+reached, and collects nothing.
 
 ## How per-member targeting works
 

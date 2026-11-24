@@ -22,9 +22,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 CLUSTER = "<cluster>"
 
 SUGGESTED_ROLES = (
-    "clusterMonitor@admin (node/cluster stats, $indexStats, top, config metadata), "
-    "readAnyDatabase@admin or read@<each app db> (listCollections), "
-    "read@local (oplog window)"
+    "atlasAdmin (Atlas), or clusterMonitor@admin (node/cluster stats, $indexStats, $queryStats, top, "
+    "config metadata, oplog window) + readAnyDatabase@admin or read@<each app db> (listCollections)"
 )
 
 
