@@ -1,14 +1,90 @@
 # mongo-survey
 
-A read-only MongoDB health-data collector. It gathers configuration, storage, index-usage and
-WiredTiger cache data from **every member** of a replica set or sharded cluster, samples
-per-collection and per-index counters for a short window, and writes everything to one compressed
-JSON-lines file. You can inspect the file, archive it, load it into MongoDB, or summarize it with
-`mongo-survey report`.
+A read-only MongoDB health-data collector. It gathers configuration, storage, index-usage, query
+and WiredTiger cache data from **every member** of a replica set or sharded cluster. It then samples
+each collection's and index's cache and operation counters for a short window, and writes
+everything to one compressed JSON-lines file. You can inspect the file, archive it, load it into
+MongoDB, or summarize it with `mongo-survey report`.
 
-It is meant to be read before it is run. The code is small, plain Python with two dependencies
-(`pymongo`, `dnspython`), it never writes to the cluster, and [every command it sends](#every-command-mongo-survey-runs)
+**Read-only.** mongo-survey never writes to the cluster, and needs only monitoring and read roles.
+If you need to approve it before running it against production, the source is small, plain Python
+with two dependencies (`pymongo`, `dnspython`), and [every command it sends](#every-command-mongo-survey-runs)
 is listed below.
+
+## Quickstart
+
+**1. Create a read-only database user.** On Atlas, with the [Atlas CLI](https://www.mongodb.com/docs/atlas/cli/current/)
+(or in the UI under *Database Access*, with these three built-in roles):
+
+```bash
+atlas dbusers create --username mongo-survey --role clusterMonitor@admin,readAnyDatabase@admin,read@local
+```
+
+It prompts for the password.
+
+On a self-managed deployment, in `mongosh`:
+
+```js
+db.getSiblingDB("admin").createUser({
+  user: "mongo-survey", pwd: passwordPrompt(),
+  roles: ["clusterMonitor", "readAnyDatabase", { role: "read", db: "local" }]
+})
+```
+
+**2. Install** (Python 3.9+):
+
+```bash
+pipx install git+https://github.com/mhelmstetter/mongo-survey
+```
+
+**3. Save the connection string in a file** so the password stays out of shell history:
+
+```bash
+umask 077; echo 'mongodb+srv://mongo-survey:<password>@<cluster-host>/' > ~/cluster.uri
+```
+
+**4. Run the preflight.** It connects, checks the version, your privileges and the namespace
+count, and shows how each member will be reached. It collects nothing and writes no file.
+
+```bash
+mongo-survey check --uri-file ~/cluster.uri
+```
+
+```
+12:00:01 INFO    sharded, MongoDB 8.0.12: checking privileges
+12:00:02 INFO    discovering members
+12:00:09 INFO    namespace inventory
+12:00:10 INFO    topology: sharded, MongoDB 8.0.12, 18 data-bearing member(s), 4 database(s), 950 namespace(s)
+12:00:10 INFO    atlas: yes — hostname suffix (…); Atlas member tags ['nodeType', 'provider', 'region', 'workloadType'] on 18 member(s)
+12:00:10 INFO    collection-level access: mongos (direct shard collection access refused; using mongos tag targeting)
+12:00:10 INFO      tags[availabilityZone=us-east-1a | {}] -> shard-0:…, shard-1:…, shard-2:…, shard-3:…, shard-4:…
+12:00:10 INFO      tags[availabilityZone=us-east-1b | {}] -> …
+12:00:10 INFO      tags[availabilityZone=us-east-1c | {}] -> …
+12:00:10 INFO      planned coverage: 15 member(s)
+12:00:10 INFO    check passed
+```
+
+(18 members counts the config servers; the 15 planned are the shard members, which hold the
+collections.)
+
+If a privilege is missing, it lists exactly which ones and the roles that grant them.
+
+**5. Collect.** This takes a few minutes on a large cluster, including a 60-second sampling window:
+
+```bash
+mongo-survey collect --uri-file ~/cluster.uri
+```
+
+It ends with a coverage summary and the file it wrote, for example
+`mongo-survey-mycluster-20260101T120000Z.jsonl.gz`. An exit status of `0` means every member
+answered. `2` means the run finished, but something was missing, and the footer of the file says what.
+
+**6. Share or summarize.** Send the `.jsonl.gz` file to whoever is doing the analysis, or preview
+the summary yourself:
+
+```bash
+mongo-survey report mongo-survey-*.jsonl.gz > report.md
+```
 
 ## What it collects
 
@@ -19,7 +95,8 @@ is listed below.
 - **Catalog.** Databases, `dbStats`, and collection options (views, time series, validators).
 - **Collection and index storage, per member.** Document counts, sizes, free space, compressor,
   and a curated set of WiredTiger cache, cursor, block and btree counters for every collection
-  and index.
+  and index. This is the same data `collStats` reports, read in bulk with
+  `$_internalAllCollectionStats` (see [How it works](#how-it-works)).
 - **Index usage from every member.** `$indexStats` counters are kept per member, so an index that
   looks unused on the primary may serve all the secondary reads. Before hiding or dropping an
   index you need its usage on every member. mongo-survey collects it from every data-bearing
@@ -29,13 +106,12 @@ is listed below.
   returned, and on 8.0+ the keys and documents examined. Query shapes contain no literal values
   (they are replaced by type placeholders such as `"?number"`). With `--query-stats-hmac`, field and
   collection names are HMAC-hashed by the server as well, using a random key that is never stored.
-- **Cache and operation heat.** A sampling window (default 60 s) of per-collection and per-index
-  counters. It shows which collections and indexes take up the cache, which churn it (bytes read
-  into cache), and which carry the reads, writes and collection scans.
-
-Node-level time series (cache pressure, eviction, tickets, replication lag) are not sampled.
-MongoDB's built-in full-time diagnostic data capture (FTDC, the `diagnostic.data` directory)
-already records `serverStatus` every second on every node; analyze it from there.
+- **Cache and operation heat.** The same bulk collection stats, sampled repeatedly over a window
+  (default 60 s, every 15 s). The window covers each collection's and index's WiredTiger cache
+  counters (bytes in cache, read into cache, written from cache, pages requested), plus
+  per-collection operation counts and latencies (the counters behind the `top` command) and
+  collection-scan counts. The differences between samples show which collections and indexes
+  take up the cache, which churn it, and which carry the reads, writes and collection scans.
 
 ## How it works
 
