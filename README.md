@@ -19,7 +19,7 @@ built-in roles `clusterMonitor` and `readAnyDatabase` (both on `admin`). No writ
 **2. Install** (Python 3.9+):
 
 ```bash
-pipx install git+https://github.com/mhelmstetter/mongo-survey
+pipx install git+https://github.com/mhelmstetter/mongo-survey@v0.1.0
 ```
 
 **3. Save the connection string in a file** so the password stays out of shell history:
@@ -92,19 +92,19 @@ mongo-survey report mongo-survey-*.jsonl.gz > report.md
 Requires Python 3.9+ on the machine you run it from, and MongoDB 7.0+ on the cluster.
 
 ```bash
-pipx install git+https://github.com/mhelmstetter/mongo-survey     # or: uv tool install git+https://github.com/mhelmstetter/mongo-survey
+pipx install git+https://github.com/mhelmstetter/mongo-survey@v0.1.0     # or: uv tool install git+https://github.com/mhelmstetter/mongo-survey@v0.1.0
 ```
 
 Or, with nothing installed but `python3`, use the single-file release:
 
 ```bash
-curl -LO https://github.com/mhelmstetter/mongo-survey/releases/latest/download/mongo-survey.pyz
-curl -LO https://github.com/mhelmstetter/mongo-survey/releases/latest/download/mongo-survey.pyz.sha256
+curl -LO https://github.com/mhelmstetter/mongo-survey/releases/download/v0.1.0/mongo-survey.pyz
+curl -LO https://github.com/mhelmstetter/mongo-survey/releases/download/v0.1.0/mongo-survey.pyz.sha256
 shasum -a 256 -c mongo-survey.pyz.sha256
 python3 mongo-survey.pyz --help
 ```
 
-The `.pyz` is a zip file. `unzip -l mongo-survey.pyz` lists its contents, and you can unzip it to
+Each release lists its SHA-256 and links to the public CI run that built it. The `.pyz` is a zip file. `unzip -l mongo-survey.pyz` lists its contents, and you can unzip it to
 read the source. Build it yourself with `scripts/build_pyz.sh`.
 
 ## Usage
@@ -287,5 +287,11 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
 .venv/bin/pytest
 ./scripts/build_pyz.sh
 ```
+
+To release: bump `__version__` in `src/mongo_survey/__init__.py`, update the `@vX.Y.Z` install
+pins and `releases/download/vX.Y.Z/` links in this README, commit, then push the tag
+`git tag vX.Y.Z && git push origin vX.Y.Z`. The release workflow refuses a tag that doesn't match
+both, then runs the tests, builds `mongo-survey.pyz`, and publishes the GitHub release with its
+checksum.
 
 License: Apache 2.0.

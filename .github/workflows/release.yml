@@ -1,0 +1,47 @@
+name: Release
+
+# Push a tag vX.Y.Z to publish a GitHub release with the single-file
+# mongo-survey.pyz and its SHA-256 checksum, built here in the open.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tag must match the package version and the README install pin
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version=$(python -c "import re;print(re.search(r'__version__ = \"([^\"]+)\"', open('src/mongo_survey/__init__.py').read()).group(1))")
+          [ "$tag" = "v$version" ] || { echo "tag $tag does not match __version__ $version"; exit 1; }
+          grep -q "mongo-survey@${tag}" README.md || { echo "README install command is not pinned to ${tag}"; exit 1; }
+          grep -q "releases/download/${tag}/" README.md || { echo "README .pyz links do not point at ${tag}"; exit 1; }
+
+      - run: python -m pip install -e '.[test]' && python -m pytest -q
+
+      - run: ./scripts/build_pyz.sh
+
+      - name: Smoke test the archive with an isolated interpreter
+        run: python -I dist/mongo-survey.pyz --version
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/mongo-survey.pyz dist/mongo-survey.pyz.sha256 \
+            --title "mongo-survey ${GITHUB_REF_NAME}" \
+            --notes "Install: \`pipx install git+https://github.com/${GITHUB_REPOSITORY}@${GITHUB_REF_NAME}\`
+
+          Or download \`mongo-survey.pyz\` (runs with \`python3 mongo-survey.pyz\`, Python 3.9+, nothing else to install) and check it with \`shasum -a 256 -c mongo-survey.pyz.sha256\`.
+
+          SHA-256: \`$(cut -d' ' -f1 dist/mongo-survey.pyz.sha256)\` — built by this workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"

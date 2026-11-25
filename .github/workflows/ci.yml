@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[test]'
+      - run: python -m pytest -q
+
+  pyz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: ./scripts/build_pyz.sh
+      # Smoke test with an isolated interpreter that has no pymongo installed.
+      - uses: actions/setup-python@v5
+        id: clean
+        with:
+          python-version: "3.9"
+      - run: |
+          "${{ steps.clean.outputs.python-path }}" -I -c "import pymongo" 2>/dev/null && { echo "pymongo unexpectedly installed"; exit 1; } || true
+          "${{ steps.clean.outputs.python-path }}" -I dist/mongo-survey.pyz --version
+          "${{ steps.clean.outputs.python-path }}" -I dist/mongo-survey.pyz --help > /dev/null
