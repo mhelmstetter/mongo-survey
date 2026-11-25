@@ -11,15 +11,15 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Official Python images, so the oldest supported version (3.9, the default
+    # python3 on RHEL 9 and macOS) stays testable after runner images drop it.
+    container: python:${{ matrix.python }}-slim
     strategy:
       fail-fast: false
       matrix:
         python: ["3.9", "3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[test]'
       - run: python -m pytest -q
@@ -32,12 +32,23 @@ jobs:
         with:
           python-version: "3.12"
       - run: ./scripts/build_pyz.sh
-      # Smoke test with an isolated interpreter that has no pymongo installed.
-      - uses: actions/setup-python@v5
-        id: clean
+      - uses: actions/upload-artifact@v4
         with:
-          python-version: "3.9"
+          name: mongo-survey-pyz
+          path: dist/
+
+  pyz-smoke:
+    # Run the archive on the oldest supported Python, in an image with nothing
+    # else installed: no pymongo, no dnspython.
+    needs: pyz
+    runs-on: ubuntu-latest
+    container: python:3.9-slim
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: mongo-survey-pyz
       - run: |
-          "${{ steps.clean.outputs.python-path }}" -I -c "import pymongo" 2>/dev/null && { echo "pymongo unexpectedly installed"; exit 1; } || true
-          "${{ steps.clean.outputs.python-path }}" -I dist/mongo-survey.pyz --version
-          "${{ steps.clean.outputs.python-path }}" -I dist/mongo-survey.pyz --help > /dev/null
+          if python -I -c "import pymongo" 2>/dev/null; then echo "pymongo unexpectedly installed"; exit 1; fi
+          python -I mongo-survey.pyz --version
+          python -I mongo-survey.pyz --help > /dev/null
+          sha256sum -c mongo-survey.pyz.sha256
