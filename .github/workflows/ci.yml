@@ -19,7 +19,7 @@ jobs:
       matrix:
         python: ["3.9", "3.11", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[test]'
       - run: python -m pytest -q
@@ -27,12 +27,12 @@ jobs:
   pyz:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: ./scripts/build_pyz.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mongo-survey-pyz
           path: dist/
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     container: python:3.9-slim
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: mongo-survey-pyz
       - run: |
